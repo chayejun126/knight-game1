@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>나이트 투어 퍼즐</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background: #f0f0f0;
+      padding: 30px;
+    }
+
+    h1 {
+      margin-bottom: 5px;
+    }
+
+    #successCount, #timer {
+      font-size: 18px;
+      margin-bottom: 15px;
+      color: #444;
+    }
+
+    .board {
+      display: grid;
+      gap: 4px;
+      justify-content: center;
+      margin-top: 10px;
+    }
+
+    .cell {
+      background-color: white;
+      border: 1px solid #333;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 24px;
+      cursor: pointer;
+      user-select: none;
+      width: 60px;
+      height: 60px;
+    }
+
+    .visited {
+      background-color: #d0e0ff;
+    }
+
+    .knight {
+      font-size: 28px;
+    }
+
+    #message {
+      margin-top: 20px;
+      font-size: 18px;
+      color: green;
+    }
+
+    .menu {
+      margin-top: 30px;
+    }
+
+    .menu button, #clearRankingBtn, #resetBtn {
+      padding: 10px 20px;
+      margin: 10px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    #resetBtn {
+      display: none;
+    }
+
+    #ranking {
+      text-align: left;
+      margin: 20px auto;
+      width: max-content;
+    }
+
+    #rankingList {
+      padding-left: 20px;
+      margin: 0;
+    }
+  </style>
+</head>
+<body>
+
+<h1>♞ 나이트 투어 퍼즐</h1>
+<div id="successCount">성공: 0</div>
+<div id="timer">시간: 0.00초</div>
+<div id="ranking">
+  <h2>🏆 랭킹</h2>
+  <ol id="rankingList"></ol>
+  <button id="clearRankingBtn">랭킹 초기화</button>
+</div>
+
+<div id="menu" class="menu">
+  <p>보드 크기를 선택하세요:</p>
+  <button onclick="startGame(5)">5x5</button>
+  <button onclick="startGame(6)">6x6</button>
+  <button onclick="startGame(7)">7x7</button>
+</div>
+
+<div class="board" id="board"></div>
+<div id="message"></div>
+<button id="resetBtn" onclick="resetGame()">다시 시작</button>
+
+<script>
+  let boardSize = 5;
+  const board = document.getElementById('board');
+  const message = document.getElementById('message');
+  const resetBtn = document.getElementById('resetBtn');
+  const menu = document.getElementById('menu');
+  const successDisplay = document.getElementById('successCount');
+  const timerDisplay = document.getElementById('timer');
+
+  let knightPos = null;
+  let visited = [];
+  let successCount = 0;
+  let gameEnded = false;
+
+  let startTime = null;
+  let timerInterval = null;
+
+  window.onload = displayRanking;
+
+  function startGame(size) {
+    boardSize = size;
+    menu.style.display = 'none';
+    resetBtn.style.display = 'inline-block';
+    createBoard();
+    displayRanking();
+  }
+
+  function createBoard() {
+    board.innerHTML = '';
+    visited = [];
+    knightPos = null;
+    gameEnded = false;
+
+    clearInterval(timerInterval);
+    startTime = null;
+    timerDisplay.textContent = '시간: 0.00초';
+
+    board.style.gridTemplateColumns = `repeat(${boardSize}, 60px)`;
+    board.style.gridTemplateRows = `repeat(${boardSize}, 60px)`;
+
+    for (let y = 0; y < boardSize; y++) {
+      for (let x = 0; x < boardSize; x++) {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.dataset.x = x;
+        cell.dataset.y = y;
+        cell.addEventListener('click', handleClick);
+        board.appendChild(cell);
+      }
+    }
+    message.textContent = '시작할 칸을 선택하세요.';
+  }
+
+  function handleClick(e) {
+    if (gameEnded) return;
+
+    const x = parseInt(e.target.dataset.x);
+    const y = parseInt(e.target.dataset.y);
+    const idx = y * boardSize + x;
+
+    if (!knightPos) {
+      knightPos = { x, y };
+      visited.push(idx);
+      startTime = Date.now();
+      timerInterval = setInterval(() => {
+        const elapsed = (Date.now() - startTime) / 1000;
+        timerDisplay.textContent = `시간: ${elapsed.toFixed(2)}초`;
+      }, 100);
+
+      updateBoard();
+      message.textContent = '이제 나이트의 이동으로 진행하세요!';
+      return;
+    }
+
+    const isValid = isValidKnightMove(knightPos, { x, y });
+    const alreadyVisited = visited.includes(idx);
+
+    if (isValid && !alreadyVisited) {
+      knightPos = { x, y };
+      visited.push(idx);
+      updateBoard();
+
+      if (visited.length === boardSize * boardSize) {
+        clearInterval(timerInterval);
+        const elapsed = Date.now() - startTime;
+        message.textContent = '🎉 축하합니다! 모든 칸을 방문했습니다!';
+        successCount++;
+        updateSuccessCount();
+        gameEnded = true;
+        saveScore(elapsed);
+      } else {
+        checkIfStuck();
+      }
+    } else {
+      message.textContent = alreadyVisited
+        ? '이미 방문한 칸입니다.'
+        : '나이트의 이동 방식이 아닙니다!';
+    }
+  }
+
+  function isValidKnightMove(from, to) {
+    const dx = Math.abs(from.x - to.x);
+    const dy = Math.abs(from.y - to.y);
+    return (dx === 2 && dy === 1) || (dx === 1 && dy === 2);
+  }
+
+  function getPossibleMoves(pos) {
+    const directions = [
+      { dx: 2, dy: 1 }, { dx: 1, dy: 2 },
+      { dx: -1, dy: 2 }, { dx: -2, dy: 1 },
+      { dx: -2, dy: -1 }, { dx: -1, dy: -2 },
+      { dx: 1, dy: -2 }, { dx: 2, dy: -1 },
+    ];
+
+    return directions
+      .map(d => ({ x: pos.x + d.dx, y: pos.y + d.dy }))
+      .filter(p =>
+        p.x >= 0 && p.x < boardSize &&
+        p.y >= 0 && p.y < boardSize &&
+        !visited.includes(p.y * boardSize + p.x)
+      );
+  }
+
+  function checkIfStuck() {
+    const moves = getPossibleMoves(knightPos);
+    if (moves.length === 0) {
+      clearInterval(timerInterval);
+      message.textContent = '😢 이동할 수 있는 칸이 없습니다. 실패!';
+      gameEnded = true;
+    }
+  }
+
+  function updateBoard() {
+    const cells = document.querySelectorAll('.cell');
+    cells.forEach((cell, index) => {
+      cell.classList.remove('knight', 'visited');
+      cell.textContent = '';
+      if (visited.includes(index)) {
+        cell.classList.add('visited');
+      }
+    });
+
+    if (knightPos) {
+      const knightIdx = knightPos.y * boardSize + knightPos.x;
+      const knightCell = cells[knightIdx];
+      knightCell.textContent = '♞';
+      knightCell.classList.add('knight');
+    }
+  }
+
+  function updateSuccessCount() {
+    successDisplay.textContent = `성공: ${successCount}`;
+  }
+
+  function resetGame() {
+    clearInterval(timerInterval);
+    menu.style.display = 'block';
+    resetBtn.style.display = 'none';
+    board.innerHTML = '';
+    message.textContent = '';
+    gameEnded = false;
+    timerDisplay.textContent = '시간: 0.00초';
+    displayRanking();
+  }
+
+  function saveScore(elapsed) {
+    const name = prompt('성공했습니다! 랭킹에 등록할 이름을 입력하세요:', '');
+    const playerName = name ? name : '익명';
+    const highScores = JSON.parse(localStorage.getItem('knightTourHighScores')) || [];
+    highScores.push({ name: playerName, time: elapsed });
+    highScores.sort((a, b) => a.time - b.time);
+    if (highScores.length > 5) highScores.splice(5);
+    localStorage.setItem('knightTourHighScores', JSON.stringify(highScores));
+    displayRanking();
+  }
+
+  function displayRanking() {
+    const highScores = JSON.parse(localStorage.getItem('knightTourHighScores')) || [];
+    const rankingList = document.getElementById('rankingList');
+    rankingList.innerHTML = '';
+    highScores.forEach(score => {
+      const li = document.createElement('li');
+      li.textContent = `${score.name}: ${(score.time/1000).toFixed(2)}초`;
+      rankingList.appendChild(li);
+    });
+  }
+
+  document.getElementById('clearRankingBtn').addEventListener('click', () => {
+    const pwd = prompt('랭킹을 초기화하려면 비밀번호를 입력하세요:');
+    if (pwd === 'chayejun') {
+      localStorage.removeItem('knightTourHighScores');
+      alert('랭킹이 초기화되었습니다.');
+      displayRanking();
+    } else {
+      alert('비밀번호가 틀렸습니다.');
+    }
+  });
+</script>
+
+</body>
+</html>
